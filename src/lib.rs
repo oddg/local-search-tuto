@@ -22,44 +22,101 @@ struct Problem {
 
 struct Grid {
     selected: Option<Position>,
+    neighbourhood: Option<Vec<Position>>,
 }
 
 type Position = (usize, usize);
 struct Algo {
     current_position: Position,
-    neighboors: Vec<Position>,
+    neighbours: Vec<Position>,
+    evaluated: Vec<Position>,
+    width: usize,
+    size: usize,
+    done: bool,
+}
+
+enum CellStatus {
+    CurrentSolution,
+    Evaluating,
+    Evaluated,
+    Neighbour,
+    None,
 }
 
 impl Algo {
-    fn new(p: Position) -> Self {
+    fn neighbours((x, y): Position, w: usize, s: usize) -> Vec<Position> {
+        let mut neighbours = vec![];
+        let x_min = x.checked_sub(w).unwrap_or(0);
+        let x_max = usize::min(x + w + 1, s);
+        let y_min = y.checked_sub(w).unwrap_or(0);
+        let y_max = usize::min(y + w + 1, s - 1);
+        for i in x_min..x_max {
+            for j in y_min..y_max {
+                if (i != x) || (j != y) {
+                    neighbours.push((i, j));
+                }
+            }
+        }
+        neighbours
+    }
+
+    fn new(p: Position, w: usize, s: usize) -> Self {
         Algo {
             current_position: p,
-            neighboors: vec![],
+            width: w,
+            size: s,
+            neighbours: Algo::neighbours(p, w, s),
+            done: false,
+            evaluated: vec![],
         }
     }
 
-    fn next(&mut self, problem: &Problem) -> AlgoEvents {
-        let mut rng = RNG.lock().unwrap();
-        AlgoEvents::SelectedSolution((
-            rng.gen_range(0, problem.size),
-            rng.gen_range(0, problem.size),
-        ))
+    fn status(&self, (i, j): Position) -> CellStatus {
+        if (i, j) == self.current_position {
+            CellStatus::CurrentSolution
+        } else if self.evaluated.iter().any(|(x, y)| (i == *x) && (j == *y)) {
+            CellStatus::Evaluated
+        } else if Some(&(i, j)) == self.neighbours.last() {
+            CellStatus::Evaluating
+        } else if self.neighbours.iter().any(|(x, y)| (i == *x) && (j == *y)) {
+            CellStatus::Neighbour
+        } else {
+            CellStatus::None
+        }
     }
-}
 
-enum AlgoEvents {
-    // The position is the current best known solution
-    SelectedSolution(Position),
-    // The algo will explore the neighborhood
-    SelectedNeighborhood(Vec<Position>),
-    // The algo evaluated the position
-    Evaluated(Position),
+    fn next(&mut self, problem: &Problem) {
+        if self.done {
+            return;
+        }
+        match self.neighbours.pop() {
+            Some(p) => self.evaluated.push(p),
+            None => {
+                let mut evaluated = vec![];
+                std::mem::swap(&mut evaluated, &mut self.evaluated);
+                match evaluated.iter().min_by_key(|(x, y)| problem.values[*x][*y]) {
+                    Some((x, y)) => {
+                        let (i, j) = self.current_position;
+                        if problem.values[*x][*y] < problem.values[i][j] {
+                            // a better solution is found!
+                            self.current_position = (*x, *y);
+                            self.neighbours =
+                                Algo::neighbours(self.current_position, self.width, self.size);
+                        } else {
+                            // local optimum is found
+                            self.done = true
+                        }
+                    }
+                    None => unreachable!(),
+                }
+            }
+        }
+    }
 }
 
 pub struct Model {
     problem: Problem,
     algo: Algo,
-    grid: Grid,
 }
 
 pub enum Msg {
@@ -79,23 +136,13 @@ impl Component for Model {
                 .map(|v| v[0..size].to_vec())
                 .collect(),
         };
-        let grid = Grid { selected: None };
-        let algo = Algo::new((0, 0));
-        Model {
-            problem,
-            grid,
-            algo,
-        }
+        let algo = Algo::new((30, 30), 2, size);
+        Model { problem, algo }
     }
 
     fn update(&mut self, msg: Self::Message) -> ShouldRender {
         match msg {
-            Msg::Next => match self.algo.next(&self.problem) {
-                AlgoEvents::SelectedSolution(p) => {
-                    self.grid.selected = Some(p);
-                }
-                _ => unreachable!(),
-            },
+            Msg::Next => self.algo.next(&self.problem),
         }
         true
     }
@@ -109,23 +156,23 @@ impl Renderable<Model> for Model {
                   <button onclick=|_| Msg::Next,>{ "Next" }</button>
                 </div>
                 <div id="grid",>
-                  { for (0..self.problem.size).map(|i: usize| view_row(i, &self.problem, &self.grid)) }
+                  { for (0..self.problem.size).map(|i: usize| view_row(i, &self.problem, &self.algo)) }
                 </div>
             </div>
         }
     }
 }
 
-fn view_row(i: usize, prb: &Problem, grid: &Grid) -> Html<Model> {
-    let style = |i: usize, j: usize| {
-        if grid.selected == Some((i, j)) {
-            format!(
-                "background-color: hsla({}, 100%, 50%, 1);",
-                color(prb.values[i][j])
-            )
-        } else {
-            "background-color: #D3D3D3;".to_owned()
-        }
+fn view_row(i: usize, prb: &Problem, algo: &Algo) -> Html<Model> {
+    let style = |i: usize, j: usize| match algo.status((i, j)) {
+        CellStatus::CurrentSolution => "background-color: green".to_owned(),
+        CellStatus::Evaluated => format!(
+            "background-color: hsla({}, 100%, 50%, 1);",
+            color(prb.values[i][j])
+        ),
+        CellStatus::Evaluating => "background-color: red".to_owned(),
+        CellStatus::Neighbour => "background-color: #80FF33;".to_owned(),
+        CellStatus::None => "background-color: #D3D3D3;".to_owned(),
     };
     html! {
         <div class="row",>
