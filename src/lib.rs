@@ -1,5 +1,5 @@
 use lazy_static::lazy_static;
-use rand::{rngs::SmallRng, Rng, SeedableRng};
+use rand::{rngs::SmallRng, SeedableRng};
 use std::sync::Mutex;
 use yew::{html, Component, ComponentLink, Html, Renderable, ShouldRender};
 
@@ -18,11 +18,6 @@ lazy_static! {
 struct Problem {
     size: usize,
     values: Vec<Vec<u32>>,
-}
-
-struct Grid {
-    selected: Option<Position>,
-    neighbourhood: Option<Vec<Position>>,
 }
 
 type Position = (usize, usize);
