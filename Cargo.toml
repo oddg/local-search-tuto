@@ -1,0 +1,9 @@
+[package]
+name = "local-search-app"
+version = "0.1.0"
+authors = ["oddg <odegevigney@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+stdweb = "0.4.2"
+yew = "0.6.0"
